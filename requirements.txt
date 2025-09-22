@@ -1,0 +1,14 @@
+gradio
+fastapi
+uvicorn[standard]
+fastrtc
+numpy
+ollama
+faster-whisper
+kokoro
+torch
+torchaudio
+asyncio
+websockets
+pydub
+loguru
