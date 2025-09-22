@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Start Voice Assistant - Final Realtime Version
-echo "🎤 Starting Voice Assistant (Final Version)"
+# Start Voice Assistant
+echo "🎤 Starting Voice Assistant"
 echo "==============================================="
 
 # Activate virtual environment
 source .venv/bin/activate
 
 # Start the final voice assistant
-python3 voice_assistant_ascii.py
+python3 voice_assistant.py

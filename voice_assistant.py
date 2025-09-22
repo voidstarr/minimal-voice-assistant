@@ -7,18 +7,13 @@ Enhanced with Silero VAD and SenseVoice ASR
 import gradio as gr
 import numpy as np
 import threading
-import time
 import logging
 import os
 import requests
-import asyncio
-from collections import deque
 from typing import Optional, Tuple, Union
-import io
 import re
 import math
 import enum
-import torch
 from fastrtc import Stream, ReplyOnPause
 import librosa
 
@@ -301,21 +296,43 @@ class SimpleVoiceAssistant:
             except Exception as e:
                 logger.warning(f"Whisper fallback model failed to load: {e}")
 
-            logger.info("Testing TTS import...")
+            logger.info("Loading Kokoro TTS...")
             try:
-                import edge_tts
-                self.edge_tts = edge_tts
-                logger.info("EdgeTTS imported successfully")
+                # Compatibility fix for phonemizer
+                try:
+                    from phonemizer.backend.espeak.wrapper import EspeakWrapper
+                    if not hasattr(EspeakWrapper, 'set_data_path'):
+                        @classmethod
+                        def set_data_path(cls, path):
+                            cls.espeak_library = path
+                        EspeakWrapper.set_data_path = set_data_path
+                        print("✅ Fixed EspeakWrapper.set_data_path compatibility issue")
+                except ImportError:
+                    # No wrapper available, that's fine
+                    pass
+                
+                import soundfile as sf
+                from misaki import en, espeak
+                from kokoro_onnx import Kokoro
+                
+                # Initialize G2P (Grapheme-to-Phoneme)
+                fallback = espeak.EspeakFallback(british=False)
+                self.g2p = en.G2P(trf=False, british=False, fallback=fallback)
+                
+                # Initialize Kokoro TTS
+                self.kokoro = Kokoro("models/kokoro-v1.0.onnx", "models/voices-v1.0.bin")
+                self.tts_backend = "kokoro"
+                logger.info("Kokoro TTS loaded successfully")
             except Exception as e:
-                logger.error("EdgeTTS import failed: " + str(e))
-                return False, "EdgeTTS import failed: " + str(e)
+                logger.error("Kokoro TTS import failed: " + str(e))
+                return False, "Kokoro TTS import failed: " + str(e)
 
             # Load TTS model
             logger.info("Loading TTS model...")
             try:
-                # EdgeTTS doesn't need pre-loading, just mark as ready
-                logger.info("EdgeTTS ready")
-                self.tts_model = "edge_tts_ready"
+                # Kokoro is now loaded, mark as ready
+                logger.info("Kokoro TTS ready")
+                self.tts_model = "kokoro_ready"
             except Exception as e:
                 logger.error("TTS loading failed: " + str(e))
                 return False, "TTS loading failed: " + str(e)
@@ -512,7 +529,7 @@ class SimpleVoiceAssistant:
             return "Sorry, I encountered an error processing your request."
 
     def generate_tts(self, text):
-        """Generate TTS audio for streaming"""
+        """Generate TTS audio using Kokoro with af_heart voice"""
         if not self.models_ready or not self.tts_model:
             logger.warning("TTS not ready")
             return None
@@ -520,45 +537,30 @@ class SimpleVoiceAssistant:
         try:
             logger.info("Generating TTS for: '" + text + "'")
 
-            # Use EdgeTTS with asyncio
-            import asyncio
+            # Convert text to phonemes using G2P
+            phonemes, _ = self.g2p(text)
+            
+            # Generate audio using Kokoro with af_heart voice
+            samples, sample_rate = self.kokoro.create(phonemes, "af_heart", is_phonemes=True)
+            
+            # Ensure audio is float32 and in the right range
+            if samples.dtype != np.float32:
+                samples = samples.astype(np.float32)
+            
+            # Normalize if needed (Kokoro usually outputs in [-1, 1] range)
+            if np.max(np.abs(samples)) > 1.0:
+                samples = samples / np.max(np.abs(samples))
+            
+            # Resample to 16kHz if needed (for WebRTC compatibility)
+            if sample_rate != 16000:
+                import librosa
+                samples = librosa.resample(samples, orig_sr=sample_rate, target_sr=16000)
+                sample_rate = 16000
 
-            async def generate_speech():
-                communicate = self.edge_tts.Communicate(
-                    text, "en-US-AriaNeural")
-                audio_bytes = b""
-                async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
-                        audio_bytes += chunk["data"]
-                return audio_bytes
+            logger.info("TTS generated: " +
+                            str(len(samples)) + " samples at " + str(sample_rate) + " Hz")
 
-            # Run the async function
-            audio_data = asyncio.run(generate_speech())
-
-            if audio_data and len(audio_data) > 44:
-                # Convert to numpy array for potential WebRTC streaming
-                import io
-                from pydub import AudioSegment
-
-                # Load audio with pydub
-                audio_segment = AudioSegment.from_file(
-                    io.BytesIO(audio_data), format="mp3")
-
-                # Convert to proper format for WebRTC (16kHz, mono)
-                audio_segment = audio_segment.set_frame_rate(
-                    16000).set_channels(1)
-
-                # Export as numpy array
-                samples = audio_segment.get_array_of_samples()
-                audio_array = np.array(samples, dtype=np.float32) / 32768.0
-
-                logger.info("TTS generated: " +
-                            str(len(audio_array)) + " samples at 16000 Hz")
-
-                return audio_array, 16000
-            else:
-                logger.error("TTS generated empty or invalid audio")
-                return None
+            return samples, sample_rate
 
         except Exception as e:
             logger.error("TTS generation error: " + str(e))
@@ -580,6 +582,7 @@ class SimpleVoiceAssistant:
                 "**Ultra-reliable voice processing with professional VAD and ASR!**\n\n"
                 "• **Silero VAD**: Advanced voice activity detection\n"
                 "• **SenseVoice ASR**: High-accuracy speech recognition\n"
+                "• **Kokoro TTS**: High-quality neural text-to-speech with af_heart voice\n"
                 "• **FastRTC WebRTC**: Ultra-low latency streaming"
             )
 
