@@ -15,6 +15,10 @@ import re
 from fastrtc import Stream, ReplyOnPause
 from fastrtc.pause_detection.silero import SileroVadOptions
 import librosa
+from openai import OpenAI
+
+from dotenv import load_dotenv
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -426,7 +430,7 @@ class SimpleVoiceAssistant:
     def generate_response(self, text):
         """
         Generate text response
-        Your task is to implement the openai gpt-4.1-mini model
+        Your task is to implement the openai gpt-4.1-mini/nano model
         """
 
         if not text.strip():
@@ -443,33 +447,54 @@ class SimpleVoiceAssistant:
             prompt = "You are a helpful voice assistant. Be concise and natural in your responses.\n\nConversation:\n" + \
                 context + "\n\nResponse as assistant:"
 
-            response = requests.post(
-                "http://localhost:11434/api/generate",
-                json={
-                    "model": "gemma3:270m",
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.7,
-                        "max_tokens": 150
-                    }
-                },
-                timeout=30
-            )
-
-            if response.status_code == 200:
-                result = response.json()
-                assistant_response = result.get('response', '').strip()
-
+            OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+            if len(OPENAI_API_KEY) > 0:
+                openai = OpenAI(api_key=OPENAI_API_KEY)
+                response = openai.chat.completions.create(
+                    model="gpt-4.1-nano",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful voice assistant. Be concise and natural in your responses."},
+                        {"role": "user", "content": context}
+                    ],
+                    temperature=0.7,
+                    max_tokens=150
+                )
+                assistant_response = response.choices[0].message['content'].strip(
+                )
                 self.conversation_context.append(
                     "Assistant: " + assistant_response)
-
-                logger.info("LLM Response: '" + assistant_response + "'")
+                logger.info("LLM Response (OpenAI): '" +
+                            assistant_response + "'")
                 return assistant_response
             else:
-                logger.error("Ollama request failed: " +
-                             str(response.status_code))
-                return "Sorry, I'm having trouble thinking right now."
+                response = requests.post(
+                    "http://localhost:11434/api/generate",
+                    json={
+                        "model": "gemma3:270m",
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "max_tokens": 150
+                        }
+                    },
+                    timeout=30
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    assistant_response = result.get('response', '').strip()
+
+                    self.conversation_context.append(
+                        "Assistant: " + assistant_response)
+
+                    logger.info("LLM Response (Ollama): '" +
+                                assistant_response + "'")
+                    return assistant_response
+                else:
+                    logger.error("Ollama request failed: " +
+                                 str(response.status_code))
+                    return "Sorry, I'm having trouble thinking right now."
 
         except Exception as e:
             logger.error("Response generation error: " + str(e))
