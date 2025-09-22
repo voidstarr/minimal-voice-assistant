@@ -3,6 +3,20 @@ set -e
 
 echo "🚀 Setting up Voice Assistant..."
 
+# Check if uv is installed
+if ! command -v uv &> /dev/null; then
+    echo "❌ uv (modern Python package manager) is required but not found."
+    echo "   Installing uv automatically..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    source $HOME/.cargo/env
+    if ! command -v uv &> /dev/null; then
+        echo "❌ Failed to install uv. Please install manually:"
+        echo "   curl -LsSf https://astral.sh/uv/install.sh | sh"
+        exit 1
+    fi
+    echo "✅ uv installed successfully!"
+fi
+
 # Check if Python 3 is installed
 if ! command -v python3 &> /dev/null; then
     echo "❌ Python 3 is required but not installed."
@@ -33,36 +47,13 @@ fi
 
 # Create virtual environment if it doesn't exist
 if [ ! -d ".venv" ]; then
-    echo "📦 Creating virtual environment..."
-    python3 -m venv .venv
+    echo "📦 Creating virtual environment with uv..."
+    uv venv
 fi
 
-# Activate virtual environment
-echo "🔧 Activating virtual environment..."
-source .venv/bin/activate
-
-# Upgrade pip, setuptools, and wheel
-echo "⬆️ Upgrading pip and build tools..."
-pip install --upgrade pip setuptools wheel
-
-# Install requirements with better error handling
-echo "📥 Installing Python packages..."
-if ! pip install -r requirements.txt; then
-    echo "❌ Some packages failed to install. Trying with alternative approaches..."
-    
-    # Try installing problematic packages individually
-    echo "🔧 Installing core packages first..."
-    pip install numpy
-    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-    
-    # Try installing misaki with no-build-isolation to avoid blis issues
-    echo "🔧 Installing misaki with build workaround..."
-    pip install --no-build-isolation misaki[en] || pip install misaki
-    
-    # Install remaining packages
-    echo "🔧 Installing remaining packages..."
-    pip install gradio fastapi uvicorn fastrtc librosa soundfile onnxruntime faster-whisper funasr kokoro-onnx phonemizer requests ollama asyncio websockets pydub loguru
-fi
+# Install requirements with uv
+echo "📥 Installing Python packages with uv..."
+uv sync
 
 # Create models directory
 echo "📁 Creating models directory..."
@@ -84,24 +75,46 @@ else
     echo "  voices-v1.0.bin already exists, skipping..."
 fi
 
+# Preload Whisper ASR model
+echo "🎤 Preloading Whisper ASR model..."
+echo "  This will download the small.en model (~244MB) to cache for faster startup..."
+uv run python -c "
+import sys
+try:
+    from faster_whisper import WhisperModel
+    print('  📥 Downloading whisper small.en model...')
+    # Download and cache the model - faster_whisper will handle the download
+    model = WhisperModel('small.en', device='cpu', compute_type='int8')
+    print('  ✅ Whisper small.en model cached successfully!')
+except ImportError:
+    print('  ⚠️ faster-whisper not installed yet, model will download on first use')
+except Exception as e:
+    print(f'  ⚠️ Model preload failed: {e}. Model will download on first use.')
+" || echo "  ⚠️ Model preload failed, model will download on first use"
+
 echo ""
 echo "✅ Installation complete!"
 echo ""
 echo "📋 Next steps:"
-echo "1. Make sure Ollama is installed and running:"
+echo "1. Install Ollama for LLM backend:"
 echo "   curl -fsSL https://ollama.ai/install.sh | sh"
 echo "   ollama serve"
 echo "   ollama pull gemma3:270m"
 echo ""
-echo "2. Activate the environment and run the assistant:"
-echo "   source .venv/bin/activate"
-echo "   python3 voice_assistant_ascii.py"
+echo "2. Run the assistant:"
+echo "   uv run python voice_assistant.py"
 echo ""
-echo "🌐 The web interface will be available at: http://localhost:7860"
+echo "🌐 The web interface will be available at: https://localhost:7860"
 echo ""
 echo "📁 Downloaded models:"
 echo "   - models/kokoro-v1.0.onnx (Kokoro TTS model)"
 echo "   - models/voices-v1.0.bin (Voice models including af_heart)"
+echo "   - Whisper small.en model (cached for ASR)"
+echo ""
+echo "🔧 For uv users:"
+echo "   uv add package-name     # Add dependencies"
+echo "   uv sync                 # Sync dependencies"
+echo "   uv run command          # Run in project environment"
 echo ""
 echo "⚠️  If you encountered build errors:"
 echo "   - The assistant will still work with Whisper ASR"
