@@ -448,7 +448,7 @@ class SimpleVoiceAssistant:
                 context + "\n\nResponse as assistant:"
 
             OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-            if len(OPENAI_API_KEY) > 0:
+            if OPENAI_API_KEY and len(OPENAI_API_KEY) > 0:
                 openai = OpenAI(api_key=OPENAI_API_KEY)
                 response = openai.chat.completions.create(
                     model="gpt-4.1-nano",
@@ -470,12 +470,12 @@ class SimpleVoiceAssistant:
                 response = requests.post(
                     "http://localhost:11434/api/generate",
                     json={
-                        "model": "gemma3:270m",
+                        "model": "gemma3:4b",
                         "prompt": prompt,
                         "stream": False,
                         "options": {
                             "temperature": 0.7,
-                            "max_tokens": 150
+                            "max_tokens": 1500
                         }
                     },
                     timeout=30

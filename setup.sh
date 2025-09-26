@@ -63,14 +63,14 @@ mkdir -p models
 echo "🎵 Downloading Kokoro TTS models..."
 if [ ! -f "models/kokoro-v1.0.onnx" ]; then
     echo "  Downloading kokoro-v1.0.onnx (325MB)..."
-    curl -L -o models/kokoro-v1.0.onnx "https://github.com/thewh1teagle/kokoro-onnx/releases/download/v1.0/kokoro-v1.0.onnx"
+    curl -L -o models/kokoro-v1.0.onnx "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
 else
     echo "  kokoro-v1.0.onnx already exists, skipping..."
 fi
 
 if [ ! -f "models/voices-v1.0.bin" ]; then
     echo "  Downloading voices-v1.0.bin (28MB)..."
-    curl -L -o models/voices-v1.0.bin "https://github.com/thewh1teagle/kokoro-onnx/releases/download/v1.0/voices-v1.0.bin"
+    curl -L -o models/voices-v1.0.bin "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
 else
     echo "  voices-v1.0.bin already exists, skipping..."
 fi
